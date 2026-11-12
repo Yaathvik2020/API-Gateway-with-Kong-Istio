@@ -28,7 +28,7 @@ spec:
       containers:
         - name: frontend
           # <-- replace the tag with the image rebuilt using REACT_APP_API_URL=/api
-          image: 214920156606.dkr.ecr.us-east-1.amazonaws.com/frontend:5bbefcf5a8d484c155c029589833f70520b3e611
+          image: 214920156606.dkr.ecr.us-east-1.amazonaws.com/frontend:7f2f5c8bd35502c3aa992acb978510fc88467775
           ports:
             - containerPort: 3000
           readinessProbe:
