@@ -1,0 +1,14 @@
+# gp3 StorageClass backed by the EBS CSI driver (the aws-ebs-csi-driver EKS add-on).
+# Replaces the legacy in-tree "gp2" class (kubernetes.io/aws-ebs) for new volumes.
+# Cluster-scoped; not marked as default so existing PVCs are unaffected.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+reclaimPolicy: Retain              # keep the EBS volume if the PVC is deleted (database data)
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

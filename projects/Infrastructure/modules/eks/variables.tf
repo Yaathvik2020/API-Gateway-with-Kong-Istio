@@ -44,3 +44,9 @@ variable "disk_size" {
   type        = number
   default     = 20
 }
+
+variable "ebs_csi_addon_version" {
+  description = "Pinned aws-ebs-csi-driver EKS add-on version (matches what is running on the cluster)"
+  type        = string
+  default     = "v1.68.0-eksbuild.1"
+}

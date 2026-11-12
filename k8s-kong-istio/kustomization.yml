@@ -9,6 +9,7 @@ kind: Kustomization
 resources:
   - 01-namespace.yml
   - 02-secrets.yml
+  - 03-database/storageclass-gp3.yml
   - 03-database/postgres.yml
   - 03-database/restore-job.yml
   - 04-backend/auth.yml

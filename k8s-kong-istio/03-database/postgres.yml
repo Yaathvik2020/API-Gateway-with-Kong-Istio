@@ -41,9 +41,18 @@ spec:
         app: postgres
     spec:
       serviceAccountName: boutique-postgres
+      securityContext:
+        fsGroup: 70                    # "postgres" group in the alpine image: lets it write the EBS volume
       containers:
         - name: postgres
-          image: postgres:15-alpine
+          image: postgres:15.19-alpine
+          securityContext:             # set per container so the Istio sidecar/init keep their own users
+            runAsUser: 70              # "postgres" user in the alpine image
+            runAsGroup: 70
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 5432
           env:
@@ -59,6 +68,13 @@ spec:
               command: ["sh", "-c", "pg_isready -U postgres"]
             initialDelaySeconds: 10
             periodSeconds: 5
+          livenessProbe:               # generous: first start runs initdb + the restore Job
+            exec:
+              command: ["sh", "-c", "pg_isready -U postgres"]
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: "1",  memory: 1Gi }
@@ -70,7 +86,7 @@ spec:
         name: postgres-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: gp2          # EKS default storage class
+        storageClassName: gp3          # EBS CSI class from storageclass-gp3.yml (immutable on an existing StatefulSet)
         resources:
           requests:
             storage: 10Gi
