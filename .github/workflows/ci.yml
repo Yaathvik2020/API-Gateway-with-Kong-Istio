@@ -1,0 +1,121 @@
+name: Boutique CI Pipeline
+
+on:
+  workflow_dispatch:
+
+# Only one run at a time, so two runs never push to main together
+concurrency:
+  group: boutique-ci
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  IMAGE_TAG: ${{ github.sha }}
+  # CHANGE 3: folder of the Kong + Istio manifests in this repo
+  MANIFEST_DIR: k8s-kong-istio
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false   # one failing service no longer cancels the others
+      matrix:
+        service:            # CHANGE 1: "gateway" removed (Kong replaces it)
+          - auth
+          - orders
+          - order-service
+          - product-service
+          - user-service
+          - frontend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS \
+          --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      - name: Build Docker Image
+        run: |
+          BUILD_ARGS=""
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            BUILD_PATH="projects/boutique-microservices/frontend"
+            # CHANGE 2: the browser calls the API at /api on the Kong address.
+            # React bakes this into the JavaScript at build time.
+            BUILD_ARGS="--build-arg REACT_APP_API_URL=/api"
+          else
+            BUILD_PATH="projects/boutique-microservices/backend/services/${{ matrix.service }}"
+          fi
+
+          echo "Building from $BUILD_PATH"
+
+          docker build $BUILD_ARGS \
+            -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ matrix.service }}:$IMAGE_TAG \
+            $BUILD_PATH
+
+      - name: Push Docker Image
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ matrix.service }}:${{ github.sha }}
+          echo "Pushing $IMAGE_URI"
+          docker push $IMAGE_URI
+
+  update-manifests:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tags in k8s manifests
+        run: |
+          NEW_TAG=${{ github.sha }}
+          REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+          # CHANGE 3: new manifest paths, no gateway
+          for SERVICE in auth orders order-service product-service user-service; do
+            MANIFEST="${MANIFEST_DIR}/04-backend/${SERVICE}.yml"
+            sed -i "s|image: .*/${SERVICE}:.*|image: ${REGISTRY}/${SERVICE}:${NEW_TAG}|g" "$MANIFEST"
+          done
+
+          sed -i "s|image: .*/frontend:.*|image: ${REGISTRY}/frontend:${NEW_TAG}|g" ${MANIFEST_DIR}/05-frontend/frontend.yml
+
+      - name: Verify updated images
+        run: grep -rn "image:" ${MANIFEST_DIR}/04-backend ${MANIFEST_DIR}/05-frontend
+
+      - name: Commit and push updated manifests
+        run: |
+          git config user.name "Yaathvik2020"
+          git config user.email "chinnayaathvik@gmail.com"
+          git add ${MANIFEST_DIR}/
+
+          if git diff --staged --quiet; then
+            echo "No manifest changes to commit"
+            exit 0
+          fi
+
+          git commit -m "ci: update image tags to ${{ github.sha }}"
+
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin ${{ github.ref_name }} && git push && exit 0
+            echo "Push failed, retrying ($i/3)..."
+            sleep 5
+          done
+
+          echo "Push failed after 3 attempts"
+          exit 1
