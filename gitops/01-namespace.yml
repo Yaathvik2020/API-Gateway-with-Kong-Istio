@@ -1,0 +1,9 @@
+# The app namespace.
+# istio-injection=enabled -> Istio automatically adds an Envoy sidecar to every pod here.
+# Nothing else in the Deployments needs to change for that.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: boutique
+  labels:
+    istio-injection: enabled

@@ -1,0 +1,112 @@
+# ISTIO 2/3 — WHO MAY CALL WHOM (zero trust)
+#
+# Rule 1: deny everything.  Then: one ALLOW per arrow below.
+#
+#   Kong ──────────► frontend, auth, product-service, orders, user-service
+#   orders ────────► product-service
+#   order-service ─► product-service
+#   all backends ──► postgres   (+ the restore Job)
+#   anyone ────────► GET /metrics   (Prometheus)
+#
+# Anything else gets "403 RBAC: access denied" (or a refused DB connection).
+# Example: user-service can NOT call orders; a hacked pod can NOT read the DB.
+#
+# Identities: "cluster.local/ns/<namespace>/sa/<ServiceAccount>" — that's why every
+# Deployment has its own ServiceAccount.
+---
+# 1. Default: allow nothing (an ALLOW policy with no rules denies all requests)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: boutique
+spec: {}
+---
+# 2. Prometheus may read /metrics on every service
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-metrics
+  namespace: boutique
+spec:
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/metrics"]
+---
+# 3. Kong -> the public services
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: frontend-from-kong, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: frontend } }
+  action: ALLOW
+  rules:
+    - from: [ { source: { namespaces: ["kong"] } } ]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: auth-from-kong, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: auth } }
+  action: ALLOW
+  rules:
+    - from: [ { source: { namespaces: ["kong"] } } ]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: orders-from-kong, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: orders } }
+  action: ALLOW
+  rules:
+    - from: [ { source: { namespaces: ["kong"] } } ]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: user-service-from-kong, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: user-service } }
+  action: ALLOW
+  rules:
+    - from: [ { source: { namespaces: ["kong"] } } ]
+---
+# 4. product-service: Kong + the two order services
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: product-service-callers, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: product-service } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["kong"]
+        - source:
+            principals:
+              - cluster.local/ns/boutique/sa/orders
+              - cluster.local/ns/boutique/sa/order-service
+---
+# 5. Postgres: only the backends (and the restore Job)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: postgres-callers, namespace: boutique }
+spec:
+  selector: { matchLabels: { app: postgres } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/boutique/sa/auth
+              - cluster.local/ns/boutique/sa/product-service
+              - cluster.local/ns/boutique/sa/orders
+              - cluster.local/ns/boutique/sa/order-service
+              - cluster.local/ns/boutique/sa/user-service
+              - cluster.local/ns/boutique/sa/boutique-db-restore
+      to:
+        - operation:
+            ports: ["5432"]
+# order-service has no ALLOW rule except /metrics: nothing is allowed to call it today.

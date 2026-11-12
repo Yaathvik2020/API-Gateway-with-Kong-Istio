@@ -1,0 +1,67 @@
+# One-time Job: load database/boutique_full.sql (products, users ...) into Postgres.
+#
+# - Runs only if products_db doesn't exist yet, so re-running it is harmless.
+# - Skips the dump's "CREATE/ALTER ROLE postgres" lines, so the dump can't
+#   change the password you set in 02-secrets.yml.
+#
+# Istio notes (the two classic Job + sidecar problems):
+# - holdApplicationUntilProxyStarts: wait for the sidecar before psql starts,
+#   otherwise the first connection fails.
+# - quitquitquit at the end: stop the sidecar, otherwise the Job never finishes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: boutique-db-restore
+  namespace: boutique
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: boutique-db-restore
+  namespace: boutique
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+    spec:
+      serviceAccountName: boutique-db-restore
+      restartPolicy: OnFailure
+      containers:
+        - name: restore
+          image: postgres:15-alpine
+          env:
+            - name: PGHOST
+              value: boutique-postgres
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: boutique-secrets, key: POSTGRES_PASSWORD }
+          command:
+            - sh
+            - -c
+            - |
+              stop_sidecar() { wget -qO- --post-data='' http://localhost:15020/quitquitquit >/dev/null 2>&1 || true; }
+              trap stop_sidecar EXIT
+
+              echo "Waiting for Postgres..."
+              until pg_isready; do sleep 2; done
+
+              if psql -tAc "SELECT 1 FROM pg_database WHERE datname='products_db'" | grep -q 1; then
+                echo "Data already loaded, nothing to do."
+                exit 0
+              fi
+
+              echo "Loading dump..."
+              grep -vE '^(CREATE|ALTER) ROLE' /dump/boutique_full.sql | psql -d postgres
+              echo "Done."
+          volumeMounts:
+            - name: dump
+              mountPath: /dump
+      volumes:
+        - name: dump
+          configMap:
+            name: boutique-db-dump      # created from boutique_full.sql by kustomization.yml

@@ -1,0 +1,34 @@
+# Applies everything except 00-platform (run that once by hand first).
+#   kubectl apply -k .        or point an Argo CD Application at this folder.
+#
+# No global "namespace:" here on purpose: each file sets its own namespace,
+# so the ServiceMonitor stays in "monitoring".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 01-namespace.yml
+  - 02-secrets.yml
+  - 03-database/postgres.yml
+  - 03-database/restore-job.yml
+  - 04-backend/auth.yml
+  - 04-backend/product-service.yml
+  - 04-backend/orders.yml
+  - 04-backend/user-service.yml
+  - 04-backend/order-service.yml
+  - 05-frontend/frontend.yml
+  - 06-istio/1-mtls.yml
+  - 06-istio/2-authorization.yml
+  - 06-istio/3-resilience.yml
+  - 07-kong/plugins.yml
+  - 07-kong/routes.yml
+  - 08-monitoring/service-monitor.yml
+
+configMapGenerator:
+  - name: boutique-db-dump
+    namespace: boutique
+    files:
+      - 03-database/boutique_full.sql
+
+generatorOptions:
+  disableNameSuffixHash: true

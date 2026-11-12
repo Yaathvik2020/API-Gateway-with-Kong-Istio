@@ -1,0 +1,21 @@
+# Argo CD Application for this folder.
+# Set "path" to wherever you put these files in your repo.
+# Apply once:  kubectl apply -f argocd-app.yml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: boutique
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Yaathvik2020/devops-ai-playbook.git
+    targetRevision: main
+    path: k8s-kong-istio            # <-- folder of these files in the repo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: boutique
+  syncPolicy:
+    automated:
+      prune: true                   # removes things you delete from Git (e.g. the old gateway)
+      selfHeal: true                # undoes manual changes made with kubectl

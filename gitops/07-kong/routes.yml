@@ -1,0 +1,59 @@
+# KONG routes — the public front door (this is what the custom gateway used to do).
+#
+#   http://<kong-address>/                 -> frontend:3000
+#   http://<kong-address>/api/auth/...     -> auth:3002
+#   http://<kong-address>/api/products/... -> product-service:3003
+#   http://<kong-address>/api/orders/...   -> orders:3005
+#   http://<kong-address>/api/users/...    -> user-service:3006
+#
+# strip-path "true": Kong removes the matched prefix before forwarding, because the
+# services serve their routes at "/":
+#   /api/products/42    -> product-service receives /42
+#   /api/auth/login     -> auth receives /login
+#
+# Later: add  host: shop.yourdomain.com  and a  tls:  section for HTTPS.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boutique-api
+  namespace: boutique
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: api-rate-limit, api-body-limit, api-request-id
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service: { name: auth, port: { number: 3002 } }
+          - path: /api/products
+            pathType: Prefix
+            backend:
+              service: { name: product-service, port: { number: 3003 } }
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service: { name: orders, port: { number: 3005 } }
+          - path: /api/users
+            pathType: Prefix
+            backend:
+              service: { name: user-service, port: { number: 3006 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boutique-frontend
+  namespace: boutique
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: frontend, port: { number: 3000 } }

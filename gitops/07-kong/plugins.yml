@@ -1,0 +1,37 @@
+# KONG plugins — features added to the routes in ingress.yml.
+---
+# Each visitor (IP) may make 300 API calls per minute; call 301 gets 429 Too Many Requests.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: api-rate-limit
+  namespace: boutique
+plugin: rate-limiting
+config:
+  minute: 300
+  limit_by: ip
+  policy: local          # with several Kong pods, use "redis" so they share one counter
+---
+# Reject request bodies bigger than 2 MB (protects the services from huge uploads).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: api-body-limit
+  namespace: boutique
+plugin: request-size-limiting
+config:
+  allowed_payload_size: 2
+  size_unit: megabytes
+---
+# Adds an X-Request-ID header to every API call, so you can follow one request
+# through Kong and the service logs.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: api-request-id
+  namespace: boutique
+plugin: correlation-id
+config:
+  header_name: X-Request-ID
+  generator: uuid
+  echo_downstream: true

@@ -1,0 +1,60 @@
+# frontend — the React website.  Public path: /  (via Kong)
+#
+# IMPORTANT: the browser calls the API at "/api/..." on the SAME address as the
+# website, and Kong routes it. Create React App bakes REACT_APP_API_URL into the
+# JavaScript at BUILD time, so the frontend image must be built with
+# REACT_APP_API_URL=/api (see README, "Frontend image"). Put that new tag below.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: boutique
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: boutique
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend, version: v1 }
+    spec:
+      serviceAccountName: frontend
+      containers:
+        - name: frontend
+          # <-- replace the tag with the image rebuilt using REACT_APP_API_URL=/api
+          image: 214920156606.dkr.ecr.us-east-1.amazonaws.com/frontend:5bbefcf5a8d484c155c029589833f70520b3e611
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 25m,  memory: 64Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: boutique
+  labels: { app: frontend }
+  annotations:
+    ingress.kubernetes.io/service-upstream: "true"
+spec:
+  type: ClusterIP
+  selector: { app: frontend }
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
