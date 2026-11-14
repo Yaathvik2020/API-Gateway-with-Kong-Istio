@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Yaathvik2020/devops-ai-playbook.git
+    repoURL: https://github.com/Yaathvik2020/API-Gateway-with-Kong-Istio.git
     targetRevision: main
     path: k8s-kong-istio            # <-- folder of these files in the repo
   destination:
