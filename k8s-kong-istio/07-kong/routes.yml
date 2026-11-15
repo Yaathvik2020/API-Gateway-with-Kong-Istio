@@ -20,6 +20,7 @@ metadata:
   namespace: boutique
   annotations:
     konghq.com/strip-path: "true"
+    konghq.com/preserve-host: "false"        # <-- ADD: lets Istio route + mTLS work
     konghq.com/plugins: api-rate-limit, api-body-limit, api-request-id
 spec:
   ingressClassName: kong
@@ -48,6 +49,8 @@ kind: Ingress
 metadata:
   name: boutique-frontend
   namespace: boutique
+  annotations:
+    konghq.com/preserve-host: "false"        # <-- ADD: lets Istio route + mTLS work
 spec:
   ingressClassName: kong
   rules:
